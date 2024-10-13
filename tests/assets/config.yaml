@@ -1,0 +1,16 @@
+experiment: test
+device: 1
+model:
+  name: BERTRetrieval
+  n_layers: 12
+  n_heads: 12
+  transformations:
+    - name: OMIT_OUTLIERS
+      args:
+        min: 0.1
+        max: 0.9
+    - name: NORMALIZE
+      args:
+        mean: 0.5
+        std: 0.5
+seed: 42

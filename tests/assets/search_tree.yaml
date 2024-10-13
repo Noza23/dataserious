@@ -1,0 +1,5 @@
+model:
+  name: [BERTRetrieval, GPT]
+  n_layers: [12, 24]
+  n_heads: [12, 24]
+seed: [42, 43, 44]
