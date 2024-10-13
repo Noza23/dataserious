@@ -1,0 +1,23 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.2
+    hooks:
+      - id: ruff
+      - id: ruff-format
+
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        exclude: (^tests)
+        args:
+          - --convention=google
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.3.0
+    hooks:
+      - id: mypy
+        args:
+          - --ignore-missing-imports
+          - --install-types
+          - --non-interactive

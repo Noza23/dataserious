@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dataserious"
+description = "dataclasses enhanced with type validation and serialization"
+keywords = ["dataclasses", "type-annotation", "validation", "serialization"]
+version = "0.1.0"
+authors = [{name = "Nozadze Giorgi", email="giorginozadze23@yahoo.com"}]
+readme = "README.md"
+license = {file = "LICENSE"}
+
+requires-python = ">=3.10"
+dependencies = [
+    "typing-extensions>=4.6.1; python_version < '3.11'"
+]
+
+[project.optional-dependencies]
+yaml = ["pyyaml"]
+dev = ["pytest", "coverage", "ruff", "pre-commit"]
+
+[tool.ruff]
+line-length = 88
