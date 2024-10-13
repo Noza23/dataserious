@@ -274,7 +274,7 @@ class BaseConfig:
                 )
             object.__setattr__(self, name, value)
 
-    def replace(self, /, **changes) -> typing.Self:
+    def replace(self: C, /, **changes) -> C:
         """Replace the fields and return a new object with replaced values (Secure).
 
         Example::
