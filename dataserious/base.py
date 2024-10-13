@@ -54,6 +54,7 @@ class ConfigJSONEncoder(JSONEncoder):
     Raises:
         TypeError: If the object is not JSON serializable and does not have
         a `config_to_json` method implemented.
+
     """
 
     def default(self, obj):  # noqa: D102
@@ -158,6 +159,7 @@ class BaseConfig:
 
      class SomeConfig(BaseConfig):
         z: list[int] = field(metadata={'description': 'list of integers'})
+
     """
 
     def __init_subclass__(cls, **kwargs):
@@ -230,6 +232,7 @@ class BaseConfig:
 
          c = SomeConfig(SomeOtherConfig(z=1), 2)
          assert c.get_by_path('x.z') == 1
+
         """
         if isinstance(path, str):
             path = path.split(".")
@@ -253,6 +256,7 @@ class BaseConfig:
 
         Args:
             obj (str | dict | C): Object to be validated.
+
         """
         if isinstance(obj, cls):
             return cls.from_dict(obj.to_dict(), allow_extra=True)
@@ -322,6 +326,7 @@ class BaseConfig:
             desciptions and default values (if available) for each field.
             The user only needs to fill in the values in the schema
             and load the config using `from_json` classmethod.
+
         """
         with open(path, "w") as f:
             json.dump(cls.to_schema(), f, indent=3)
@@ -339,6 +344,7 @@ class BaseConfig:
             desciptions and default values (if available) for each field.
             The user only needs to fill in the values in the schema
             and load the config using `from_yaml` classmethod
+
         """
         return _yaml_dump(cls.to_schema(), path)
 
@@ -349,6 +355,7 @@ class BaseConfig:
         Args:
             config (dict[str, typing.Any]): Configuration dictionary to be parsed.
             allow_extra (bool): Whether to allow extra fields in the configuration.
+
         """
         if not allow_extra:
             _check_extra_names(config, {f.name for f in cls.fields()})
@@ -374,6 +381,7 @@ class BaseConfig:
         Note:
             In the directory `yaml` and `json` files can be mixed, the method will
             load all of them.
+
         """
         if not isinstance(path, Path):
             path = Path(path)
@@ -403,6 +411,7 @@ class BaseConfig:
             field names as keys and as values we have either a default value
             (if available) a type hint with a description or a list of possible
             values for `Enum` fields.
+
         """
         return {f.name: _handle_schema(f) for f in cls.fields()}
 
@@ -419,6 +428,7 @@ class BaseConfig:
         Note:
             - Configurations which are not searchable are not included in the tree.
             - We mark the searchable fields with a metadata key 'searchable'.
+
         """
         search_tree = _to_search_tree(self)
         if prune_null:
@@ -442,6 +452,7 @@ class BaseConfig:
 
         Returns:
             list[BaseConfig]: configs generated from the SearchTree in Grid Search.
+
         """
         return [
             self.from_dict(cfg)
@@ -458,6 +469,7 @@ class BaseConfig:
 
         Returns:
             Generator[BaseConfig]: configs generated from the SearchTree in Grid Search.
+
         """
         for cfg in _yield_config_search_space(
             config_tree=self.to_dict(), search_tree=search_tree
@@ -474,6 +486,7 @@ class BaseConfig:
 
         Returns:
             list[BaseConfig]: configs generated from the SearchTree in Random Search.
+
         """
         return [
             self.from_dict(cfg)
@@ -546,6 +559,7 @@ def _yield_config_search_space(
     Note:
         - If `random_n` is given `seed` must also be provided.
         - If they are both `None` the function will generate a grid search space.
+
     """
     mapping = _get_grid_mapping(search_tree)
     product = itertools.product(*mapping.values())
@@ -566,9 +580,10 @@ def _get_grid_mapping(search_tree: SearchTreeType):
     Args:
         search_tree (SearchTreeType): Search Tree to be mapped.
 
-    Returns
+    Returns:
         Mapping where the keys are point separeted string paths
         and the values are the tree leafes.
+
     """
     search_tree = prune_null_path(search_tree)
     tree_paths = get_all_string_path(search_tree)
@@ -600,6 +615,7 @@ def get_search_tree_leaf_by_path(
     Args:
         search_tree (SearchTreeType): Search Tree to access the value from.
         path (list[str] | str): Path to the value in the search tree.
+
     """
     if isinstance(path, str):
         path = path.split(".")
@@ -617,6 +633,7 @@ def set_config_value_by_path(
         config_dict (JsonSerializableDict): Configuration dictionary to be modified.
         path (list[str] | str): Path to the value in the configuration.
         value (JsonType): Value to be set in the configuration.
+
     """
     if isinstance(path, str):
         path = path.split(".")
@@ -632,6 +649,7 @@ def get_all_string_path(tree: dict, sep: str = ".") -> list[str]:
 
     Returns:
         list[str]: List of string paths to the leafes of the tree.
+
     """
     keys = []
     for k, v in tree.items():
@@ -716,6 +734,7 @@ def check_type(attr, annot: Annotation) -> bool:
     True
     >>> check_type([BaseConfig()], list[BaseConfig])
     True
+
     """
     if annot == typing.Any:
         return True
@@ -837,6 +856,7 @@ def _check_extra_names(config: dict[str, typing.Any], field_names: set[str]):
 
     Raises:
         ValueError: If there are extra fields in the configuration.
+
     """
     if extra_names := set(config.keys()) - field_names:
         raise ValueError(

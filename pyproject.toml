@@ -22,3 +22,6 @@ dev = ["pytest", "coverage", "ruff", "pre-commit"]
 
 [tool.ruff]
 line-length = 88
+[tool.ruff.lint]
+fixable = ["I"]
+extend-select = ["I", "T"]
