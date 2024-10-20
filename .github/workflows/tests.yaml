@@ -1,4 +1,4 @@
-name: testing
+name: tests
 
 on:
   pull_request:
@@ -17,8 +17,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e '.[yaml, dev]'
-      - name: test with coverage
+      - name: test_with_coverage
         run: |
           coverage run -m pytest
           coverage report -m --ignore-errors
           rm -rf .coverage
+      - name: upload_coverage
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
