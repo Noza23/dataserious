@@ -1,11 +1,12 @@
-import unittest
-from typing import Any
 import tempfile
+import unittest
+from dataclasses import field
+from typing import Any
+
 import yaml
 
-from dataserious import BaseConfig, BaseStrEnum, BaseIntEnum
-from dataserious.base import check_type, JsonSerializableDict, JsonType, SearchTreeType
-from dataclasses import field
+from dataserious import BaseConfig, BaseIntEnum, BaseStrEnum
+from dataserious.base import JsonSerializableDict, JsonType, SearchTreeType, check_type
 
 
 class Devices(BaseIntEnum):
