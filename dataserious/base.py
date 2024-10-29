@@ -428,13 +428,13 @@ class BaseConfig:
         """
         return {f.name: _handle_schema(f) for f in cls.fields()}
 
-    @staticmethod
-    def handle_field_from(annot: Annotation, value) -> typing.Any:
+    @classmethod
+    def handle_field_from(cls, annot: Annotation, value) -> typing.Any:
         """Handle from serialization for the field."""
         return _handle_field_from(annot, value)
 
-    @staticmethod
-    def handle_field_to(value) -> typing.Any:
+    @classmethod
+    def handle_field_to(cls, value) -> typing.Any:
         """Handle to serialization for the field."""
         return _handle_field_to(value)
 
