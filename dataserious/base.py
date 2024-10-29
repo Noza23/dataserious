@@ -43,6 +43,18 @@ SearchTreeType: typing.TypeAlias = dict[
     str, typing.Union[SearchLeafType, "SearchTreeType"]
 ]
 
+Annotation: typing.TypeAlias = (
+    type
+    | UnionType
+    | GenericAlias
+    | typing._UnionGenericAlias  # type: ignore[name-defined, attr-defined]
+    | typing._GenericAlias  # type: ignore[name-defined, attr-defined]
+    | typing.ForwardRef
+)
+
+UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defined, attr-defined]
+GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
+
 
 class ConfigJSONEncoder(JSONEncoder):
     """Custom JSON Encoder Allowing Serialization for Enum and Custom Non-JSON Objects.
@@ -165,8 +177,7 @@ class BaseConfig:
     def __init_subclass__(cls, **kwargs):
         """Subclass initialization."""
         kwargs.setdefault("kw_only", True)
-        if not dataclasses.is_dataclass(cls):
-            dataclasses.dataclass(cls, **kwargs)
+        dataclasses.dataclass(cls, **kwargs)
 
     def __post_init__(self):
         """Run the post initialization checks and modifications.
@@ -361,7 +372,7 @@ class BaseConfig:
             _check_extra_names(config, {f.name for f in cls.fields()})
         return cls(
             **{
-                f.name: _handle_field_from(f.type, config.get(f.name))
+                f.name: cls.handle_field_from(f.type, config.get(f.name))
                 for f in cls.fields()
                 if f.name in config
             }
@@ -369,7 +380,9 @@ class BaseConfig:
 
     def to_dict(self) -> JsonSerializableDict:
         """Convert the configuration to json serializable python dictionary."""
-        return {f.name: _handle_field_to(getattr(self, f.name)) for f in self.fields()}
+        return {
+            f.name: self.handle_field_to(getattr(self, f.name)) for f in self.fields()
+        }
 
     @classmethod
     def from_dir(cls, path: str | Path):
@@ -414,6 +427,16 @@ class BaseConfig:
 
         """
         return {f.name: _handle_schema(f) for f in cls.fields()}
+
+    @staticmethod
+    def handle_field_from(annot: Annotation, value) -> typing.Any:
+        """Handle from serialization for the field."""
+        return _handle_field_from(annot, value)
+
+    @staticmethod
+    def handle_field_to(value) -> typing.Any:
+        """Handle to serialization for the field."""
+        return _handle_field_to(value)
 
     def to_search_tree(self, prune_null: bool = True) -> SearchTreeType:
         """Generate a search tree template for the configuration class instance.
@@ -569,8 +592,8 @@ def _yield_config_search_space(
         random.Random(seed).shuffle(product_list)
         product = product_list[:random_n]  # type: ignore[assignment]
     for values in product:
-        for k, values in zip(mapping.keys(), values):
-            set_config_value_by_path(config_tree, k, values)
+        for k, values_ in zip(mapping.keys(), values):
+            set_config_value_by_path(config_tree, k, values_)
         yield config_tree
 
 
@@ -671,19 +694,6 @@ def set_by_path(tree: dict, path: list, value):
     return tree
 
 
-Annotation: typing.TypeAlias = (
-    type
-    | UnionType
-    | GenericAlias
-    | typing._UnionGenericAlias  # type: ignore[name-defined, attr-defined]
-    | typing._GenericAlias  # type: ignore[name-defined, attr-defined]
-    | typing.ForwardRef
-)
-
-UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defined, attr-defined]
-GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
-
-
 def parse(attr, annot: Annotation) -> typing.Any:
     """Parse custom non-json serializable objects, like `Enum` or keep it as it is."""
     if inspect.isclass(annot) and issubclass(annot, enum.Enum):
@@ -691,7 +701,7 @@ def parse(attr, annot: Annotation) -> typing.Any:
 
     if isinstance(annot, UnionInstance):
         for t in typing.get_args(annot):
-            if issubclass(t, enum.Enum):
+            if issubclass(t, enum.Enum) and attr is not None:
                 return t(attr)
 
     if isinstance(annot, GenericAliasInstance):
@@ -769,7 +779,7 @@ def check_type(attr, annot: Annotation) -> bool:
     return isinstance(attr, annot)
 
 
-def _handle_field_from(annot: Annotation, value):
+def _handle_field_from(annot: Annotation, value) -> typing.Any:
     """Handle from serialization for the field."""
     if value is None:
         return None
@@ -804,7 +814,7 @@ def _handle_field_from(annot: Annotation, value):
     return value
 
 
-def _handle_field_to(value):
+def _handle_field_to(value) -> typing.Any:
     """Handle to serialization for the field."""
     if isinstance(value, BaseConfig):
         return value.to_dict()
