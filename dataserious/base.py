@@ -43,6 +43,18 @@ SearchTreeType: typing.TypeAlias = dict[
     str, typing.Union[SearchLeafType, "SearchTreeType"]
 ]
 
+Annotation: typing.TypeAlias = (
+    type
+    | UnionType
+    | GenericAlias
+    | typing._UnionGenericAlias  # type: ignore[name-defined, attr-defined]
+    | typing._GenericAlias  # type: ignore[name-defined, attr-defined]
+    | typing.ForwardRef
+)
+
+UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defined, attr-defined]
+GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
+
 
 class ConfigJSONEncoder(JSONEncoder):
     """Custom JSON Encoder Allowing Serialization for Enum and Custom Non-JSON Objects.
@@ -99,39 +111,26 @@ class BaseEnum(enum.Enum, metaclass=CustomEnumMeta):
     """BaseEnum Class for implementing custom Enum classes."""
 
 
+class BaseStrEnum(str, enum.Enum):
+    """BaseEnum Class for implementing custom Enum classes."""
+
+    def __str__(self):
+        """Return the string representation of the Enum."""
+        return self.value
+
+
+class BaseIntEnum(int, BaseEnum):
+    """BaseEnum Class for implementing custom Enum classes."""
+
+    def __str__(self):
+        """Return the string representation of the Enum."""
+        return self.value.__str__()
+
+
 if sys.version_info >= (3, 11):
     dataclass_transform = typing.dataclass_transform
-
-    class BaseStrEnum(enum.StrEnum, metaclass=CustomEnumMeta):
-        """BaseEnum Class for implementing custom Enum classes."""
-
-        def __str__(self):
-            """Return the string representation of the Enum."""
-            return self.value
-
-    class BaseIntEnum(enum.IntEnum, metaclass=CustomEnumMeta):
-        """BaseEnum Class for implementing custom Enum classes."""
-
-        def __str__(self):
-            """Return the string representation of the Enum."""
-            return self.value.__str__()
-
 else:
     from typing_extensions import dataclass_transform
-
-    class BaseStrEnum(str, BaseEnum):
-        """BaseEnum Class for implementing custom Enum classes."""
-
-        def __str__(self):
-            """Return the string representation of the Enum."""
-            return self.value
-
-    class BaseIntEnum(int, BaseEnum):
-        """BaseEnum Class for implementing custom Enum classes."""
-
-        def __str__(self):
-            """Return the string representation of the Enum."""
-            return self.value.__str__()
 
 
 C = typing.TypeVar("C", bound="BaseConfig")
@@ -165,8 +164,7 @@ class BaseConfig:
     def __init_subclass__(cls, **kwargs):
         """Subclass initialization."""
         kwargs.setdefault("kw_only", True)
-        if not dataclasses.is_dataclass(cls):
-            dataclasses.dataclass(cls, **kwargs)
+        dataclasses.dataclass(cls, **kwargs)
 
     def __post_init__(self):
         """Run the post initialization checks and modifications.
@@ -296,11 +294,11 @@ class BaseConfig:
     @classmethod
     def from_yaml(cls, path: Path | str):
         """Load configuration from a YAML file."""
-        return cls.from_dict(_yaml_load(path))
+        return cls.from_dict(yaml_load(path))
 
     def to_yaml(self, path: Path | str):
         """Deserialize the configuration to a YAML file."""
-        return _yaml_dump(self.to_dict(), path)
+        return yaml_dump(self.to_dict(), path)
 
     @classmethod
     def from_json(cls, path: Path | str):
@@ -346,7 +344,7 @@ class BaseConfig:
             and load the config using `from_yaml` classmethod
 
         """
-        return _yaml_dump(cls.to_schema(), path)
+        return yaml_dump(cls.to_schema(), path)
 
     @classmethod
     def from_dict(cls, config: dict[str, typing.Any], allow_extra: bool = False):
@@ -361,7 +359,7 @@ class BaseConfig:
             _check_extra_names(config, {f.name for f in cls.fields()})
         return cls(
             **{
-                f.name: _handle_field_from(f.type, config.get(f.name))
+                f.name: cls.handle_field_from(f.type, config.get(f.name))
                 for f in cls.fields()
                 if f.name in config
             }
@@ -369,7 +367,9 @@ class BaseConfig:
 
     def to_dict(self) -> JsonSerializableDict:
         """Convert the configuration to json serializable python dictionary."""
-        return {f.name: _handle_field_to(getattr(self, f.name)) for f in self.fields()}
+        return {
+            f.name: self.handle_field_to(getattr(self, f.name)) for f in self.fields()
+        }
 
     @classmethod
     def from_dir(cls, path: str | Path):
@@ -415,6 +415,16 @@ class BaseConfig:
         """
         return {f.name: _handle_schema(f) for f in cls.fields()}
 
+    @classmethod
+    def handle_field_from(cls, annot: Annotation, value) -> typing.Any:
+        """Handle from serialization for the field."""
+        return _handle_field_from(annot, value)
+
+    @classmethod
+    def handle_field_to(cls, value) -> typing.Any:
+        """Handle to serialization for the field."""
+        return _handle_field_to(value)
+
     def to_search_tree(self, prune_null: bool = True) -> SearchTreeType:
         """Generate a search tree template for the configuration class instance.
 
@@ -437,7 +447,7 @@ class BaseConfig:
 
     def search_tree_to_yaml(self, path: str | Path):
         """Dump the Search Tree Template to a YAML file."""
-        return _yaml_dump(self.to_search_tree(), path)
+        return yaml_dump(self.to_search_tree(), path)
 
     def search_tree_to_json(self, path: str | Path):
         """Dump the Search Tree Template to a JSON file."""
@@ -504,14 +514,14 @@ class BaseConfig:
             self.from_dict(cfg)
             for cfg in _yield_config_search_space(
                 config_tree=self.to_dict(),
-                search_tree=_yaml_load(search_tree_path),
+                search_tree=yaml_load(search_tree_path),
             )
         ]
 
     def yield_configs_grid_from_path(self, search_tree_path: Path | str):
         """Generate a grid of configurations from the Search Tree in Grid Search."""
         for cfg in _yield_config_search_space(
-            config_tree=self.to_dict(), search_tree=_yaml_load(search_tree_path)
+            config_tree=self.to_dict(), search_tree=yaml_load(search_tree_path)
         ):
             yield self.from_dict(cfg)
 
@@ -523,7 +533,7 @@ class BaseConfig:
             self.from_dict(cfg)
             for cfg in _yield_config_search_space(
                 config_tree=self.to_dict(),
-                search_tree=_yaml_load(search_tree_path),
+                search_tree=yaml_load(search_tree_path),
                 random_n=n,
                 seed=seed,
             )
@@ -569,8 +579,8 @@ def _yield_config_search_space(
         random.Random(seed).shuffle(product_list)
         product = product_list[:random_n]  # type: ignore[assignment]
     for values in product:
-        for k, values in zip(mapping.keys(), values):
-            set_config_value_by_path(config_tree, k, values)
+        for k, values_ in zip(mapping.keys(), values):
+            set_config_value_by_path(config_tree, k, values_)
         yield config_tree
 
 
@@ -671,19 +681,6 @@ def set_by_path(tree: dict, path: list, value):
     return tree
 
 
-Annotation: typing.TypeAlias = (
-    type
-    | UnionType
-    | GenericAlias
-    | typing._UnionGenericAlias  # type: ignore[name-defined, attr-defined]
-    | typing._GenericAlias  # type: ignore[name-defined, attr-defined]
-    | typing.ForwardRef
-)
-
-UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defined, attr-defined]
-GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
-
-
 def parse(attr, annot: Annotation) -> typing.Any:
     """Parse custom non-json serializable objects, like `Enum` or keep it as it is."""
     if inspect.isclass(annot) and issubclass(annot, enum.Enum):
@@ -691,7 +688,7 @@ def parse(attr, annot: Annotation) -> typing.Any:
 
     if isinstance(annot, UnionInstance):
         for t in typing.get_args(annot):
-            if issubclass(t, enum.Enum):
+            if issubclass(t, enum.Enum) and attr is not None:
                 return t(attr)
 
     if isinstance(annot, GenericAliasInstance):
@@ -769,7 +766,7 @@ def check_type(attr, annot: Annotation) -> bool:
     return isinstance(attr, annot)
 
 
-def _handle_field_from(annot: Annotation, value):
+def _handle_field_from(annot: Annotation, value) -> typing.Any:
     """Handle from serialization for the field."""
     if value is None:
         return None
@@ -804,7 +801,7 @@ def _handle_field_from(annot: Annotation, value):
     return value
 
 
-def _handle_field_to(value):
+def _handle_field_to(value) -> typing.Any:
     """Handle to serialization for the field."""
     if isinstance(value, BaseConfig):
         return value.to_dict()
@@ -870,7 +867,7 @@ def isbaseconfig(annot: Annotation) -> bool:
     return inspect.isclass(annot) and issubclass(annot, BaseConfig)
 
 
-def _yaml_dump(obj, path: str | Path):
+def yaml_dump(obj, path: str | Path):
     """Dump the object to a YAML file."""
     if not YAML_AVAILABLE:
         raise ImportError(
@@ -881,7 +878,7 @@ def _yaml_dump(obj, path: str | Path):
         yaml.dump(obj, f, sort_keys=False)
 
 
-def _yaml_load(path: str | Path):
+def yaml_load(path: str | Path):
     """Load the object from a YAML file."""
     if not YAML_AVAILABLE:
         raise ImportError(
