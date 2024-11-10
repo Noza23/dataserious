@@ -10,10 +10,13 @@ import operator
 import random
 import sys
 import typing
+from dataclasses import MISSING
 from functools import reduce
-from json.encoder import JSONEncoder
 from pathlib import Path
 from types import GenericAlias, UnionType
+
+from dataserious.fields import ConfigField
+from dataserious.json import _serialize
 
 YAML_AVAILABLE = importlib.util.find_spec("yaml")
 if YAML_AVAILABLE:
@@ -56,45 +59,6 @@ UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defi
 GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
 
 
-class ConfigJSONEncoder(JSONEncoder):
-    """Custom JSON Encoder Allowing Serialization for Enum and Custom Non-JSON Objects.
-
-    Note:
-        The Encoder extend the JSONEncoder class to provide custom serialization.
-        objects by calling a `config_to_json` method if available.
-
-    Raises:
-        TypeError: If the object is not JSON serializable and does not have
-        a `config_to_json` method implemented.
-
-    """
-
-    def default(self, obj):  # noqa: D102
-        if getattr(obj, "config_to_json", None) and callable(obj.config_to_json):
-            json_str = obj.config_to_json()
-            if not isinstance(json_str, str):
-                raise TypeError(
-                    "`config_to_json` method must return a json string, "
-                    f"got {type(json_str).__name__}"
-                )
-            return json_str
-
-        raise TypeError(
-            f"Object of type {obj.__class__.__name__} is not JSON serializable."
-            f" You can implement a `.config_to_json()` method for "
-            f"{obj.__class__.__name__} to make it JSON serializable. "
-            "But note that in loading the configuration back from file,"
-            "customly serialized objects should be deserialized back to the "
-            "original object by extending the `__post_init__` method "
-            "of the BaseConfig class. This is usually not recommended."
-        )
-
-
-def _serialize(obj):
-    """Serialize the object using the custom JSON Encoder."""
-    return json.dumps(obj, cls=ConfigJSONEncoder).strip('"')
-
-
 class CustomEnumMeta(enum.EnumMeta):
     """Custom Enum Meta Class for Better Error Handling."""
 
@@ -132,11 +96,12 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import dataclass_transform
 
-
 C = typing.TypeVar("C", bound="BaseConfig")
 
 
-@dataclass_transform(kw_only_default=True)
+@dataclass_transform(
+    kw_only_default=True, field_specifiers=(ConfigField, dataclasses.field)
+)
 class BaseConfig:
     """Base Configuration class extending python `dataclasses` module.
 
@@ -829,8 +794,7 @@ def _handle_schema(field: dataclasses.Field):
             str(set(field.type._value2member_map_.keys())).replace("'", "")
             + f": {desc}"
         )
-
-    if not isinstance(field.default, dataclasses._MISSING_TYPE):
+    if field.default is not MISSING:
         return field.default
     return f"{field.type}: {desc}"
 
