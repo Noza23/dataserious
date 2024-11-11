@@ -1,6 +1,8 @@
+from unittest.mock import patch
+
 from dataserious import BaseConfig
 from dataserious.base import MISSING
-from dataserious.fields import ConfigField
+from dataserious.fields import ConfigField, get_attr_descriptions
 
 
 class Coords(BaseConfig):
@@ -34,3 +36,8 @@ def test_attr_descriptions():
     Coords.__dataclass_fields__["ref"].metadata[
         "description"
     ] == "This is an multiline attribute docstring for ref."
+
+
+def test_get_attr_descriptions_oserror():
+    with patch("inspect.getsource", side_effect=OSError):
+        assert get_attr_descriptions(object) == {}
