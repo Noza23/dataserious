@@ -13,9 +13,9 @@ import typing
 from dataclasses import MISSING
 from functools import reduce
 from pathlib import Path
-from types import GenericAlias, UnionType
+from types import GenericAlias, MappingProxyType, UnionType
 
-from dataserious.fields import ConfigField
+from dataserious.fields import ConfigField, get_attr_descriptions
 from dataserious.json import _serialize
 
 YAML_AVAILABLE = importlib.util.find_spec("yaml")
@@ -129,7 +129,20 @@ class BaseConfig:
     def __init_subclass__(cls, **kwargs):
         """Subclass initialization."""
         kwargs.setdefault("kw_only", True)
-        dataclasses.dataclass(cls, **kwargs)
+        cls = dataclasses.dataclass(cls, **kwargs)
+        descriptions = get_attr_descriptions(cls=cls)
+        for field in cls.fields():
+            if not (attr_desc := descriptions.get(field.name)):
+                continue  # Skip if no attr description is found.
+
+            if not field.metadata:
+                field.metadata = MappingProxyType({"description": attr_desc})
+            else:
+                if field.metadata.get("description"):
+                    continue  # Skip if ConfigField description is already present.
+                metadata_new = field.metadata.copy()
+                metadata_new["description"] = attr_desc
+                field.metadata = MappingProxyType(metadata_new)
 
     def __post_init__(self):
         """Run the post initialization checks and modifications.

@@ -28,22 +28,30 @@ class TransformationFunction(BaseStrEnum):
 
 class Transformation(BaseConfig):
     name: TransformationFunction = TransformationFunction.OMIT_OUTLIERS
+    """Transformation function to apply to the data."""
     args: dict[str, Any] = ConfigField(default_factory=dict)
+    """Arguments for the transformation function."""
 
 
 class ModelConfig(BaseConfig):
     name: Model
 
-    n_layers: int = ConfigField(description="Number of layers", searchable=True)
-    n_heads: int = ConfigField(description="Number of heads", searchable=True)
+    n_layers: int = ConfigField(searchable=True)
+    """Number of layers in the model."""
+    n_heads: int = ConfigField(searchable=True)
+    """Number of heads in the model."""
     transformations: list[Transformation] = ConfigField(default_factory=list)
+    """Transformations to apply to the data."""
 
 
 class Config(BaseConfig):
     experiment: str
-    device: Devices = ConfigField(description="Device to run the experiment on")
-    model: ModelConfig = ConfigField(default_factory=ModelConfig)
+    device: Devices
+    """Device to run the experiment on."""
+    model: ModelConfig
+    """Model configuration."""
     seed: int = ConfigField(default=42, searchable=True)
+    """Seed for reproducibility."""
 
     def apply_transformations(self, data: Any) -> Any:
         for transformation in self.model.transformations:
