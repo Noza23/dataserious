@@ -666,7 +666,7 @@ def parse(attr, annot: Annotation) -> typing.Any:
 
     if isinstance(annot, UnionInstance):
         for t in typing.get_args(annot):
-            if isinstance(t, enum.EnumType):
+            if isinstance(t, enum.EnumMeta):
                 try:
                     return t(attr)
                 except ValueError:
@@ -838,7 +838,7 @@ def _check_extra_names(config: dict[str, typing.Any], field_names: set[str]):
 
 def type_to_view_string(annot: Annotation):
     """Convert the type hint to a view string."""
-    if isinstance(annot, enum.EnumType):
+    if isinstance(annot, enum.EnumMeta):
         return str(set(annot._value2member_map_.keys())).replace("'", "")
     if isinstance(annot, UnionInstance):
         return " | ".join([type_to_view_string(t) for t in typing.get_args(annot)])
