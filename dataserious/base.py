@@ -675,19 +675,17 @@ def parse(attr, annot: Annotation) -> typing.Any:
 
     if isinstance(annot, GenericAliasInstance):
         if issubclass(typing.get_origin(annot), typing.List):
-            if not isinstance(attr, typing.List):
-                return
-            return [parse(element, typing.get_args(annot)[0]) for element in attr]
+            if isinstance(attr, typing.List):
+                return [parse(element, typing.get_args(annot)[0]) for element in attr]
 
         elif issubclass(typing.get_origin(annot), typing.Dict):
-            if not isinstance(attr, typing.Dict):
-                return
-            return {
-                parse(key, typing.get_args(annot)[0]): parse(
-                    value, typing.get_args(annot)[1]
-                )
-                for key, value in attr.items()
-            }
+            if isinstance(attr, typing.Dict):
+                return {
+                    parse(key, typing.get_args(annot)[0]): parse(
+                        value, typing.get_args(annot)[1]
+                    )
+                    for key, value in attr.items()
+                }
 
     if isinstance(annot, typing.ForwardRef):
         return parse(attr, eval(annot.__forward_arg__))
