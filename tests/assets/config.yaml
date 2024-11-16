@@ -1,5 +1,5 @@
 experiment: test
-device: 1
+device: [1]
 model:
   name: BERTRetrieval
   n_layers: 12

@@ -68,14 +68,14 @@ def test_schema(config):
     """Test the schema generation."""
     schema = config.__class__.to_schema()
     assert isinstance(schema, dict)
-    assert "<class 'str'>" in schema["experiment"]
+    assert "str:" in schema["experiment"]
     assert "{0, 1, 2}" in schema["device"]
     assert schema["seed"] == 42
 
 
 def test_enum(config):
     """Test the Enum Class Parsing."""
-    assert isinstance(config.device, Enum)
+    assert check_type(config.device, list[Enum])
 
 
 def test_type_error(config):

@@ -46,7 +46,7 @@ class ModelConfig(BaseConfig):
 
 class Config(BaseConfig):
     experiment: str
-    device: Devices
+    device: list[Devices] | str
     """Device to run the experiment on."""
     model: ModelConfig
     """Model configuration."""
