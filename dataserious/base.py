@@ -666,8 +666,11 @@ def parse(attr, annot: Annotation) -> typing.Any:
 
     if isinstance(annot, UnionInstance):
         for t in typing.get_args(annot):
-            if issubclass(t, enum.Enum) and attr is not None:
-                return t(attr)
+            if isinstance(t, enum.EnumType):
+                try:
+                    return t(attr)
+                except ValueError:
+                    continue
 
     if isinstance(annot, GenericAliasInstance):
         if issubclass(typing.get_origin(annot), typing.List):
@@ -761,20 +764,18 @@ def _handle_field_from(annot: Annotation, value) -> typing.Any:
 
     if isinstance(annot, GenericAliasInstance):
         if issubclass(typing.get_origin(annot), typing.List):
-            if not isinstance(value, typing.List):
-                return
-            return [
-                _handle_field_from(typing.get_args(annot)[0], element)
-                for element in value
-            ]
+            if isinstance(value, typing.List):
+                return [
+                    _handle_field_from(typing.get_args(annot)[0], element)
+                    for element in value
+                ]
 
         if issubclass(typing.get_origin(annot), typing.Dict):
-            if not isinstance(value, typing.Dict):
-                return
-            return {
-                key: _handle_field_from(typing.get_args(annot)[1], val)
-                for key, val in value.items()
-            }
+            if isinstance(value, typing.Dict):
+                return {
+                    key: _handle_field_from(typing.get_args(annot)[1], val)
+                    for key, val in value.items()
+                }
 
     return value
 
@@ -801,24 +802,21 @@ def _handle_schema(field: dataclasses.Field):
     desc = field.metadata.get("description", "No description given")
     if inspect.isclass(field.type) and issubclass(field.type, BaseConfig):
         return field.type.to_schema()
-
-    if isinstance(field.type, enum.EnumMeta):
-        return (
-            str(set(field.type._value2member_map_.keys())).replace("'", "")
-            + f": {desc}"
-        )
     if field.default is not MISSING:
-        return field.default
-    return f"{field.type}: {desc}"
+        if type(field.default) in JSON_TYPES:
+            return field.default
+        else:
+            return (
+                f"{type_to_view_string(field.type)}: {desc} (default: {field.default})"
+            )
+    return f"{type_to_view_string(field.type)}: {desc}"
 
 
 def _handle_searchtree_schema(obj):
     """Handle the field for the search tree schema."""
     if isinstance(obj, BaseConfig):
         return obj.to_search_tree()
-    if isinstance(obj, enum.Enum):
-        return str(set(obj._value2member_map_.keys())).replace("'", "")
-    return [type(obj).__name__]
+    return [type_to_view_string(type(obj))]
 
 
 def _check_extra_names(config: dict[str, typing.Any], field_names: set[str]):
@@ -837,6 +835,22 @@ def _check_extra_names(config: dict[str, typing.Any], field_names: set[str]):
             f"Extra fields in the configuration: {extra_names}. "
             f"Allowed fields are: {field_names}"
         )
+
+
+def type_to_view_string(annot: Annotation):
+    """Convert the type hint to a view string."""
+    if isinstance(annot, enum.EnumType):
+        return str(set(annot._value2member_map_.keys())).replace("'", "")
+    if isinstance(annot, UnionInstance):
+        return " | ".join([type_to_view_string(t) for t in typing.get_args(annot)])
+    if isinstance(annot, GenericAliasInstance):
+        if issubclass(typing.get_origin(annot), typing.List):
+            return f"list[{type_to_view_string(annot.__args__[0])}]"
+        if issubclass(typing.get_origin(annot), typing.Dict):
+            return f"dict[{type_to_view_string(annot.__args__[0])}, {type_to_view_string(annot.__args__[1])}]"
+    if isinstance(annot, typing.ForwardRef):
+        return type_to_view_string(eval(annot.__forward_arg__))
+    return annot.__name__
 
 
 def isbaseconfig(annot: Annotation) -> bool:
