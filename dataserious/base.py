@@ -670,7 +670,8 @@ def parse(attr, annot: Annotation) -> typing.Any:
                 try:
                     return t(attr)
                 except ValueError:
-                    continue
+                    pass
+            return parse(attr, t)
 
     if isinstance(annot, GenericAliasInstance):
         if issubclass(typing.get_origin(annot), typing.List):
