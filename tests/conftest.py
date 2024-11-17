@@ -1,24 +1,25 @@
+from enum import Enum
 from typing import Any
 
 import pytest
 
-from dataserious import BaseConfig, BaseIntEnum, BaseStrEnum
+from dataserious import BaseConfig
 from dataserious.fields import ConfigField
 
 
-class Devices(BaseIntEnum):
+class Devices(int, Enum):
     CPU = 0
     GPU = 1
     TPU = 2
 
 
-class Model(BaseStrEnum):
+class Model(str, Enum):
     GPT = "GPT"
     BERT = "BERT"
     BERTRetrieval = "BERTRetrieval"
 
 
-class TransformationFunction(BaseStrEnum):
+class TransformationFunction(str, Enum):
     OMIT_OUTLIERS = "OMIT_OUTLIERS"
     NORMALIZE = "NORMALIZE"
 

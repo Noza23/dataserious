@@ -59,38 +59,6 @@ UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defi
 GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
 
 
-class CustomEnumMeta(enum.EnumMeta):
-    """Custom Enum Meta Class for Better Error Handling."""
-
-    def __call__(cls, value, **kwargs):
-        """Extend the __call__ method to raise a ValueError."""
-        if value not in cls._value2member_map_:
-            raise ValueError(
-                f"{cls.__name__} must be one of {[*cls._value2member_map_.keys()]}"
-            )
-        return super().__call__(value, **kwargs)
-
-
-class BaseEnum(enum.Enum, metaclass=CustomEnumMeta):
-    """BaseEnum Class for implementing custom Enum classes."""
-
-
-class BaseStrEnum(str, enum.Enum):
-    """BaseEnum Class for implementing custom Enum classes."""
-
-    def __str__(self):
-        """Return the string representation of the Enum."""
-        return self.value
-
-
-class BaseIntEnum(int, BaseEnum):
-    """BaseEnum Class for implementing custom Enum classes."""
-
-    def __str__(self):
-        """Return the string representation of the Enum."""
-        return self.value.__str__()
-
-
 if sys.version_info >= (3, 11):
     dataclass_transform = typing.dataclass_transform
 else:
@@ -112,7 +80,6 @@ class BaseConfig:
         type Annotations post initialize in `__post_init__` dataclass method.
 
         - The configuration class should inherit from `BaseConfig`.
-        - 'BaseEnum' 'BaseStrEnum' and 'BaseIntEnum' provide enhanced Enum classes.
         - Field annotations should be json serializable types to ensure proper I/O.
 
         - Specifing `{'description': 'some description'}` in the field metadata is
@@ -169,7 +136,7 @@ class BaseConfig:
                 raise TypeError(
                     '\n'
                     f'| loc: {self.__class__.__name__}.{field.name}\n'
-                    f'| expects: {field.type}\n'
+                    f'| expects: {type_to_view_string(field.type)}\n'
                     f'| got: {type(getattr(self, field.name))}\n'
                     f'| description: {field.metadata.get("description")}\n'
                 )
@@ -190,6 +157,18 @@ class BaseConfig:
     def fields(cls) -> tuple[dataclasses.Field, ...]:
         """Get the fields of the configuration class."""
         return dataclasses.fields(cls)  # type: ignore[arg-type]
+
+    @classmethod
+    def field_names(cls) -> tuple[str, ...]:
+        """Get the field names of the configuration class."""
+        return tuple(f.name for f in cls.fields())
+
+    @classmethod
+    def get_all_subclasses(cls: type[C]) -> set[type[C]]:
+        """Get all subclasses of given config class recursively."""
+        return set(cls.__subclasses__()).union(
+            [s for c in cls.__subclasses__() for s in c.get_all_subclasses()]
+        )
 
     def get_by_path(self, path: list[str] | str):
         """Get the value in the configuration by point separated path or list of keys.
@@ -215,26 +194,9 @@ class BaseConfig:
         return get_by_path(self, path)
 
     @classmethod
-    def field_names(cls) -> tuple[str, ...]:
-        """Get the field names of the configuration class."""
-        return tuple(f.name for f in cls.fields())
-
-    @classmethod
-    def get_all_subclasses(cls: type[C]) -> set[type[C]]:
-        """Get all subclasses of given class recursively."""
-        return set(cls.__subclasses__()).union(
-            [s for c in cls.__subclasses__() for s in c.get_all_subclasses()]
-        )
-
-    @classmethod
-    def config_validate(cls: type[C], obj: str | dict | C) -> C:
-        """Validate the object against the configuration class.
-
-        Args:
-            obj (str | dict | C): Object to be validated.
-
-        """
-        if isinstance(obj, cls):
+    def config_validate(cls: type[C], obj: typing.Union[str, dict, "BaseConfig"]) -> C:
+        """Validate the object against the configuration class."""
+        if isinstance(obj, BaseConfig):
             return cls.from_dict(obj.to_dict(), allow_extra=True)
         if isinstance(obj, dict):
             return cls.from_dict(obj)
@@ -294,7 +256,7 @@ class BaseConfig:
         """Dump the JSON schema for the configuration.
 
         Args:
-            path (Path | str): Path to the file to write the `json` schema.
+            path: Path to the file to write the `json` schema.
 
         Note:
             This method is useful for generating configuration templates.
@@ -312,7 +274,7 @@ class BaseConfig:
         """Dump the YAML schema for the configuration.
 
         Args:
-            path (Path | str): Path to the file to write the `yaml` schema.
+            path: Path to the file to write the `yaml` schema.
 
         Note:
             This method is useful for generating configuration templates.
@@ -329,8 +291,8 @@ class BaseConfig:
         """Parse the configuration from a python dictionary.
 
         Args:
-            config (dict[str, typing.Any]): Configuration dictionary to be parsed.
-            allow_extra (bool): Whether to allow extra fields in the configuration.
+            config: Configuration dictionary to be parsed.
+            allow_extra: Whether to allow extra fields in the configuration.
 
         """
         if not allow_extra:
@@ -354,17 +316,15 @@ class BaseConfig:
         """Load all configuration from a selected directory.
 
         Args:
-            path (Path | str): Path to the directory containing configuration files.
+            path: Path to the directory containing configuration files.
 
         Note:
             In the directory `yaml` and `json` files can be mixed, the method will
             load all of them.
 
         """
-        if not isinstance(path, Path):
-            path = Path(path)
         patt = f'*[{"|".join(YAML_SUFFIXES + JSON_SUFFIXES)}]'
-        return [cls.from_file(p) for p in path.glob(patt)]
+        return [cls.from_file(p) for p in Path(path).glob(patt)]
 
     @classmethod
     def from_file(cls, path: str | Path):
@@ -407,7 +367,7 @@ class BaseConfig:
         """Generate a search tree template for the configuration class instance.
 
         Args:
-            prune_null (bool): Whether to prune the null paths from the search tree.
+            prune_null: Whether to prune the null paths from the search tree.
 
         Returns:
             SearchTreeType: A tree structure of the configuration class where the leafes
@@ -843,18 +803,24 @@ def type_to_view_string(annot: Annotation):
     if isinstance(annot, UnionInstance):
         return " | ".join([type_to_view_string(t) for t in typing.get_args(annot)])
     if isinstance(annot, GenericAliasInstance):
-        if issubclass(typing.get_origin(annot), typing.List):
+        origin = typing.get_origin(annot)
+        if isclasssubclass(origin, typing.List):
             return f"list[{type_to_view_string(annot.__args__[0])}]"
-        if issubclass(typing.get_origin(annot), typing.Dict):
+        if isclasssubclass(origin, typing.Dict):
             return f"dict[{type_to_view_string(annot.__args__[0])}, {type_to_view_string(annot.__args__[1])}]"
     if isinstance(annot, typing.ForwardRef):
         return type_to_view_string(eval(annot.__forward_arg__))
     return annot.__name__
 
 
-def isbaseconfig(annot: Annotation) -> bool:
+def isclasssubclass(obj: object, cls: type[object] | tuple[type[object], ...]) -> bool:
+    """Check if the object is a subclass of the class, return `False` if not a class."""
+    return inspect.isclass(obj) and issubclass(obj, cls)
+
+
+def isbaseconfig(obj: object) -> bool:
     """Check if the class is a subclass of BaseConfig."""
-    return inspect.isclass(annot) and issubclass(annot, BaseConfig)
+    return isclasssubclass(obj, BaseConfig)
 
 
 def yaml_dump(obj, path: str | Path):
