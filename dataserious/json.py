@@ -2,6 +2,8 @@
 
 import json
 
+JSON_TYPES = (int, float, str, bool, list, dict, type(None))
+
 
 class ConfigJSONEncoder(json.JSONEncoder):
     """Custom JSON Encoder Allowing Serialization for Enum and Custom Non-JSON Objects.
