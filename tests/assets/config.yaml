@@ -1,4 +1,4 @@
-experiment: test
+experiment: exp1
 device: [1]
 model:
   name: BERTRetrieval

@@ -9,14 +9,24 @@ import json
 import operator
 import random
 import sys
-import typing
 from dataclasses import MISSING
 from functools import reduce
 from pathlib import Path
-from types import GenericAlias, MappingProxyType, UnionType
+from types import MappingProxyType
+from typing import Any, Dict, ForwardRef, List, TypeVar, Union, get_args, get_origin
 
 from dataserious.fields import ConfigField, get_attr_descriptions
-from dataserious.json import _serialize
+from dataserious.json import JSON_TYPES, _serialize
+from dataserious.types import (
+    Annotation,
+    GenericAliasTypes,
+    JsonSerializableDict,
+    JsonType,
+    SearchLeafType,
+    SearchTreeType,
+    UnionTypes,
+)
+from dataserious.utils import check_type, isclasssubclass, type_to_view_string
 
 YAML_AVAILABLE = importlib.util.find_spec("yaml")
 if YAML_AVAILABLE:
@@ -26,77 +36,12 @@ YAML_SUFFIXES = (".yaml", ".yml")
 JSON_SUFFIXES = (".json",)
 
 
-JSON_TYPES = (int, float, str, bool, list, dict, type(None))
-
-JsonPrimitive: typing.TypeAlias = int | float | str | bool | None
-JsonArrayType: typing.TypeAlias = list[
-    typing.Union[JsonPrimitive, "JsonObjectType", "JsonArrayType"]
-]
-JsonObjectType: typing.TypeAlias = dict[
-    str, typing.Union[JsonPrimitive, JsonArrayType, "JsonObjectType"]
-]
-JsonType: typing.TypeAlias = JsonPrimitive | JsonArrayType | JsonObjectType
-
-JsonSerializableDict: typing.TypeAlias = JsonObjectType
-
-# Types used for defining and performing Random or Grid Search on BaseConfig
-# Tree having list of possible configuration values as leafs
-SearchLeafType: typing.TypeAlias = list[JsonType]
-SearchTreeType: typing.TypeAlias = dict[
-    str, typing.Union[SearchLeafType, "SearchTreeType"]
-]
-
-Annotation: typing.TypeAlias = (
-    type
-    | UnionType
-    | GenericAlias
-    | typing._UnionGenericAlias  # type: ignore[name-defined, attr-defined]
-    | typing._GenericAlias  # type: ignore[name-defined, attr-defined]
-    | typing.ForwardRef
-)
-
-UnionInstance = (UnionType, typing._UnionGenericAlias)  # type: ignore[name-defined, attr-defined]
-GenericAliasInstance = (GenericAlias, typing._GenericAlias)  # type: ignore[name-defined, attr-defined]
-
-
-class CustomEnumMeta(enum.EnumMeta):
-    """Custom Enum Meta Class for Better Error Handling."""
-
-    def __call__(cls, value, **kwargs):
-        """Extend the __call__ method to raise a ValueError."""
-        if value not in cls._value2member_map_:
-            raise ValueError(
-                f"{cls.__name__} must be one of {[*cls._value2member_map_.keys()]}"
-            )
-        return super().__call__(value, **kwargs)
-
-
-class BaseEnum(enum.Enum, metaclass=CustomEnumMeta):
-    """BaseEnum Class for implementing custom Enum classes."""
-
-
-class BaseStrEnum(str, enum.Enum):
-    """BaseEnum Class for implementing custom Enum classes."""
-
-    def __str__(self):
-        """Return the string representation of the Enum."""
-        return self.value
-
-
-class BaseIntEnum(int, BaseEnum):
-    """BaseEnum Class for implementing custom Enum classes."""
-
-    def __str__(self):
-        """Return the string representation of the Enum."""
-        return self.value.__str__()
-
-
 if sys.version_info >= (3, 11):
-    dataclass_transform = typing.dataclass_transform
+    from typing import dataclass_transform
 else:
     from typing_extensions import dataclass_transform
 
-C = typing.TypeVar("C", bound="BaseConfig")
+C = TypeVar("C", bound="BaseConfig")
 
 
 @dataclass_transform(
@@ -112,7 +57,6 @@ class BaseConfig:
         type Annotations post initialize in `__post_init__` dataclass method.
 
         - The configuration class should inherit from `BaseConfig`.
-        - 'BaseEnum' 'BaseStrEnum' and 'BaseIntEnum' provide enhanced Enum classes.
         - Field annotations should be json serializable types to ensure proper I/O.
 
         - Specifing `{'description': 'some description'}` in the field metadata is
@@ -169,7 +113,7 @@ class BaseConfig:
                 raise TypeError(
                     '\n'
                     f'| loc: {self.__class__.__name__}.{field.name}\n'
-                    f'| expects: {field.type}\n'
+                    f'| expects: {type_to_view_string(field.type)}\n'
                     f'| got: {type(getattr(self, field.name))}\n'
                     f'| description: {field.metadata.get("description")}\n'
                 )
@@ -190,6 +134,34 @@ class BaseConfig:
     def fields(cls) -> tuple[dataclasses.Field, ...]:
         """Get the fields of the configuration class."""
         return dataclasses.fields(cls)  # type: ignore[arg-type]
+
+    @classmethod
+    def field_names(cls) -> tuple[str, ...]:
+        """Get the field names of the configuration class."""
+        return tuple(f.name for f in cls.fields())
+
+    @classmethod
+    def get_all_subclasses(cls: type[C]) -> set[type[C]]:
+        """Get all subclasses of given config class recursively."""
+        return set(cls.__subclasses__()).union(
+            [s for c in cls.__subclasses__() for s in c.get_all_subclasses()]
+        )
+
+    @classmethod
+    def config_validate(cls: type[C], obj: Union[str, dict, "BaseConfig"]) -> C:
+        """Validate the object against the configuration class."""
+        if type(obj) is cls:
+            return obj
+        if isinstance(obj, BaseConfig):
+            return cls.from_dict(obj.to_dict(), allow_extra=True)
+        if isinstance(obj, dict):
+            return cls.from_dict(obj)
+        if isinstance(obj, str):
+            return cls.from_dict(json.loads(obj))
+        raise ValueError(
+            f"Object must be an instance of {cls.__name__}, dict, or json string, "
+            f"got {type(obj).__name__}"
+        )
 
     def get_by_path(self, path: list[str] | str):
         """Get the value in the configuration by point separated path or list of keys.
@@ -213,37 +185,6 @@ class BaseConfig:
         if isinstance(path, str):
             path = path.split(".")
         return get_by_path(self, path)
-
-    @classmethod
-    def field_names(cls) -> tuple[str, ...]:
-        """Get the field names of the configuration class."""
-        return tuple(f.name for f in cls.fields())
-
-    @classmethod
-    def get_all_subclasses(cls: type[C]) -> set[type[C]]:
-        """Get all subclasses of given class recursively."""
-        return set(cls.__subclasses__()).union(
-            [s for c in cls.__subclasses__() for s in c.get_all_subclasses()]
-        )
-
-    @classmethod
-    def config_validate(cls: type[C], obj: str | dict | C) -> C:
-        """Validate the object against the configuration class.
-
-        Args:
-            obj (str | dict | C): Object to be validated.
-
-        """
-        if isinstance(obj, cls):
-            return cls.from_dict(obj.to_dict(), allow_extra=True)
-        if isinstance(obj, dict):
-            return cls.from_dict(obj)
-        if isinstance(obj, str):
-            return cls.from_dict(json.loads(obj))
-        raise ValueError(
-            f"Object must be an instance of {cls.__name__}, dict, or json string, "
-            f"got {type(obj).__name__}"
-        )
 
     def _modify_field(self, /, **changes):
         """Replace the fields of the configuration in place. (Insecure)."""
@@ -294,7 +235,7 @@ class BaseConfig:
         """Dump the JSON schema for the configuration.
 
         Args:
-            path (Path | str): Path to the file to write the `json` schema.
+            path: Path to the file to write the `json` schema.
 
         Note:
             This method is useful for generating configuration templates.
@@ -312,7 +253,7 @@ class BaseConfig:
         """Dump the YAML schema for the configuration.
 
         Args:
-            path (Path | str): Path to the file to write the `yaml` schema.
+            path: Path to the file to write the `yaml` schema.
 
         Note:
             This method is useful for generating configuration templates.
@@ -325,12 +266,12 @@ class BaseConfig:
         return yaml_dump(cls.to_schema(), path)
 
     @classmethod
-    def from_dict(cls, config: dict[str, typing.Any], allow_extra: bool = False):
+    def from_dict(cls, config: dict[str, Any], allow_extra: bool = False):
         """Parse the configuration from a python dictionary.
 
         Args:
-            config (dict[str, typing.Any]): Configuration dictionary to be parsed.
-            allow_extra (bool): Whether to allow extra fields in the configuration.
+            config: Configuration dictionary to be parsed.
+            allow_extra: Whether to allow extra fields in the configuration.
 
         """
         if not allow_extra:
@@ -354,17 +295,15 @@ class BaseConfig:
         """Load all configuration from a selected directory.
 
         Args:
-            path (Path | str): Path to the directory containing configuration files.
+            path: Path to the directory containing configuration files.
 
         Note:
             In the directory `yaml` and `json` files can be mixed, the method will
             load all of them.
 
         """
-        if not isinstance(path, Path):
-            path = Path(path)
         patt = f'*[{"|".join(YAML_SUFFIXES + JSON_SUFFIXES)}]'
-        return [cls.from_file(p) for p in path.glob(patt)]
+        return [cls.from_file(p) for p in Path(path).glob(patt)]
 
     @classmethod
     def from_file(cls, path: str | Path):
@@ -394,12 +333,12 @@ class BaseConfig:
         return {f.name: _handle_schema(f) for f in cls.fields()}
 
     @classmethod
-    def handle_field_from(cls, annot: Annotation, value) -> typing.Any:
+    def handle_field_from(cls, annot: Annotation, value) -> Any:
         """Handle from serialization for the field."""
         return _handle_field_from(annot, value)
 
     @classmethod
-    def handle_field_to(cls, value) -> typing.Any:
+    def handle_field_to(cls, value) -> Any:
         """Handle to serialization for the field."""
         return _handle_field_to(value)
 
@@ -407,7 +346,7 @@ class BaseConfig:
         """Generate a search tree template for the configuration class instance.
 
         Args:
-            prune_null (bool): Whether to prune the null paths from the search tree.
+            prune_null: Whether to prune the null paths from the search tree.
 
         Returns:
             SearchTreeType: A tree structure of the configuration class where the leafes
@@ -648,7 +587,7 @@ def get_all_string_path(tree: dict, sep: str = ".") -> list[str]:
     return keys
 
 
-def get_by_path(tree: BaseConfig | dict, path: list) -> typing.Any:
+def get_by_path(tree: BaseConfig | dict, path: list) -> Any:
     """Access a nested object in root by item sequence."""
     return reduce(operator.getitem, path, tree)
 
@@ -659,13 +598,16 @@ def set_by_path(tree: dict, path: list, value):
     return tree
 
 
-def parse(attr, annot: Annotation) -> typing.Any:
+def parse(attr, annot: Annotation):
     """Parse custom non-json serializable objects, like `Enum` or keep it as it is."""
     if inspect.isclass(annot) and issubclass(annot, enum.Enum):
-        return annot(attr)
+        try:
+            return annot(attr)
+        except ValueError:
+            pass
 
-    if isinstance(annot, UnionInstance):
-        for t in typing.get_args(annot):
+    if isinstance(annot, UnionTypes):
+        for t in get_args(annot):
             if isinstance(t, enum.EnumMeta):
                 try:
                     return t(attr)
@@ -673,113 +615,58 @@ def parse(attr, annot: Annotation) -> typing.Any:
                     pass
             return parse(attr, t)
 
-    if isinstance(annot, GenericAliasInstance):
-        if issubclass(typing.get_origin(annot), typing.List):
-            if isinstance(attr, typing.List):
-                return [parse(element, typing.get_args(annot)[0]) for element in attr]
+    if isinstance(annot, GenericAliasTypes):
+        origin = get_origin(annot)
+        args = get_args(annot)
+        if isclasssubclass(origin, List) and isinstance(attr, list):
+            return [parse(element, args[0]) for element in attr]
 
-        elif issubclass(typing.get_origin(annot), typing.Dict):
-            if isinstance(attr, typing.Dict):
-                return {
-                    parse(key, typing.get_args(annot)[0]): parse(
-                        value, typing.get_args(annot)[1]
-                    )
-                    for key, value in attr.items()
-                }
+        elif isclasssubclass(origin, Dict) and isinstance(attr, dict):
+            return {
+                parse(key, args[0]): parse(value, args[1])
+                for key, value in attr.items()
+            }
 
-    if isinstance(annot, typing.ForwardRef):
+    if isinstance(annot, ForwardRef):
         return parse(attr, eval(annot.__forward_arg__))
     return attr
 
 
-def check_type(attr, annot: Annotation) -> bool:
-    """Check the type of the attribute recursively.
-
-    Args:
-        attr (Any): Attribute to be checked.
-        annot (Annotation): Type hint to be checked against the attribute.
-
-    Returns:
-        bool: True if the attribute matches the type hint, False otherwise.
-
-    Examples::
-    >>> check_type("abc", int)
-    False
-    >>> check_type([1, "a"], list[int | str])
-    True
-    >>> check_type({'a': [1, 2], 'b': ["a", "b"]}, JsonType)
-    True
-    >>> check_type([BaseConfig()], list[BaseConfig])
-    True
-
-    """
-    if annot == typing.Any:
-        return True
-    if isinstance(annot, UnionInstance):
-        return any([check_type(attr, t) for t in typing.get_args(annot)])
-
-    if isinstance(annot, GenericAliasInstance):
-        if issubclass(typing.get_origin(annot), typing.List):
-            if not isinstance(attr, typing.List):
-                return False
-            return all(
-                [check_type(element, typing.get_args(annot)[0]) for element in attr]
-            )
-        elif issubclass(typing.get_origin(annot), typing.Dict):
-            if not isinstance(attr, typing.Dict):
-                return False
-            return all(
-                [
-                    check_type(key, typing.get_args(annot)[0])
-                    and check_type(value, typing.get_args(annot)[1])
-                    for key, value in attr.items()
-                ]
-            )
-        else:
-            raise ValueError(
-                f"Unsupported Generic Type: {typing.get_origin(annot)}. "
-                "Contact the maintainer to add more type support."
-            )
-    if isinstance(annot, typing.ForwardRef):
-        return check_type(attr, eval(annot.__forward_arg__))
-
-    return isinstance(attr, annot)
-
-
-def _handle_field_from(annot: Annotation, value) -> typing.Any:
+def _handle_field_from(annot: Annotation, value) -> Any:
     """Handle from serialization for the field."""
     if value is None:
         return None
 
+    if inspect.isclass(annot) and issubclass(annot, enum.Enum):
+        try:
+            return annot(value)
+        except ValueError:
+            pass
+
     if inspect.isclass(annot) and issubclass(annot, BaseConfig):
-        if isinstance(value, BaseConfig):
-            return value
-        if isinstance(value, dict):
-            return annot.from_dict(value)
+        return annot.config_validate(value)
 
-    if isinstance(annot, UnionInstance):
-        for t in typing.get_args(annot):
-            return _handle_field_from(t, value)
+    if isinstance(annot, UnionTypes):
+        for t in get_args(annot):  # left to right, first match parsing
+            parsed = _handle_field_from(t, value)
+            if check_type(parsed, t):
+                return parsed
 
-    if isinstance(annot, GenericAliasInstance):
-        if issubclass(typing.get_origin(annot), typing.List):
-            if isinstance(value, typing.List):
-                return [
-                    _handle_field_from(typing.get_args(annot)[0], element)
-                    for element in value
-                ]
-
-        if issubclass(typing.get_origin(annot), typing.Dict):
-            if isinstance(value, typing.Dict):
-                return {
-                    key: _handle_field_from(typing.get_args(annot)[1], val)
-                    for key, val in value.items()
-                }
+    if isinstance(annot, GenericAliasTypes):
+        origin = get_origin(annot)
+        args = get_args(annot)
+        if isclasssubclass(origin, list) and isinstance(value, list):
+            return [_handle_field_from(args[0], element) for element in value]
+        if isclasssubclass(origin, Dict) and isinstance(value, dict):
+            return {
+                _handle_field_from(args[0], key): _handle_field_from(args[1], val)
+                for key, val in value.items()
+            }
 
     return value
 
 
-def _handle_field_to(value) -> typing.Any:
+def _handle_field_to(value) -> Any:
     """Handle to serialization for the field."""
     if isinstance(value, BaseConfig):
         return value.to_dict()
@@ -818,17 +705,8 @@ def _handle_searchtree_schema(obj):
     return [type_to_view_string(type(obj))]
 
 
-def _check_extra_names(config: dict[str, typing.Any], field_names: set[str]):
-    """Check for extra field names in the configuration.
-
-    Args:
-        config (dict[str, typing.Any]): Configuration dictionary to be checked.
-        field_names (set[str]): Set of field names in the configuration class.
-
-    Raises:
-        ValueError: If there are extra fields in the configuration.
-
-    """
+def _check_extra_names(config: dict[str, Any], field_names: set[str]):
+    """Check for extra field names in the configuration dictionary."""
     if extra_names := set(config.keys()) - field_names:
         raise ValueError(
             f"Extra fields in the configuration: {extra_names}. "
@@ -836,25 +714,9 @@ def _check_extra_names(config: dict[str, typing.Any], field_names: set[str]):
         )
 
 
-def type_to_view_string(annot: Annotation):
-    """Convert the type hint to a view string."""
-    if isinstance(annot, enum.EnumMeta):
-        return str(set(annot._value2member_map_.keys())).replace("'", "")
-    if isinstance(annot, UnionInstance):
-        return " | ".join([type_to_view_string(t) for t in typing.get_args(annot)])
-    if isinstance(annot, GenericAliasInstance):
-        if issubclass(typing.get_origin(annot), typing.List):
-            return f"list[{type_to_view_string(annot.__args__[0])}]"
-        if issubclass(typing.get_origin(annot), typing.Dict):
-            return f"dict[{type_to_view_string(annot.__args__[0])}, {type_to_view_string(annot.__args__[1])}]"
-    if isinstance(annot, typing.ForwardRef):
-        return type_to_view_string(eval(annot.__forward_arg__))
-    return annot.__name__
-
-
-def isbaseconfig(annot: Annotation) -> bool:
+def isbaseconfig(obj: object) -> bool:
     """Check if the class is a subclass of BaseConfig."""
-    return inspect.isclass(annot) and issubclass(annot, BaseConfig)
+    return isclasssubclass(obj, BaseConfig)
 
 
 def yaml_dump(obj, path: str | Path):

@@ -68,7 +68,7 @@ def test_schema(config):
     """Test the schema generation."""
     schema = config.__class__.to_schema()
     assert isinstance(schema, dict)
-    assert "str:" in schema["experiment"]
+    assert "exp1 | exp2 | None" in schema["experiment"]
     assert "{0, 1, 2}" in schema["device"]
     assert schema["seed"] == 42
 
