@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -46,7 +46,7 @@ class ModelConfig(BaseConfig):
 
 
 class Config(BaseConfig):
-    experiment: str
+    experiment: Literal["exp1", "exp2"] | None
     device: list[Devices] | str
     """Device to run the experiment on."""
     model: ModelConfig
