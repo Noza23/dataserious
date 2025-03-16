@@ -112,4 +112,4 @@ except TypeError as e:
 
 ## Contributing
 
-Contributions are welcome! Please read the contributing guidelines for more information.
+Contributions are welcome!
