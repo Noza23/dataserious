@@ -23,7 +23,7 @@ def check_type(attr, annot: Annotation) -> bool:
     False
     >>> check_type([1, "a"], list[int | str])
     True
-    >>> check_type({'a': [1, 2], 'b': ["a", "b"]}, JsonType)
+    >>> check_type({"a": [1, 2], "b": ["a", "b"]}, JsonType)
     True
     >>> check_type([BaseConfig()], list[BaseConfig])
     True
@@ -33,21 +33,19 @@ def check_type(attr, annot: Annotation) -> bool:
         return True
 
     if isinstance(annot, UnionTypes):
-        return any([check_type(attr, t) for t in get_args(annot)])
+        return any(check_type(attr, t) for t in get_args(annot))
 
     if isinstance(annot, GenericAliasTypes):
         origin = get_origin(annot)
         args = get_args(annot)
         if isclasssubclass(origin, (List, Set)):
             return isinstance(attr, (list, set)) and all(
-                [check_type(element, args[0]) for element in attr]
+                check_type(element, args[0]) for element in attr
             )
         elif isclasssubclass(origin, Dict):
             return isinstance(attr, dict) and all(
-                [
-                    check_type(key, args[0]) and check_type(value, args[1])
-                    for key, value in attr.items()
-                ]
+                check_type(key, args[0]) and check_type(value, args[1])
+                for key, value in attr.items()
             )
         elif origin is Literal:
             return attr in args
@@ -55,7 +53,10 @@ def check_type(attr, annot: Annotation) -> bool:
             return isinstance(attr, origin)
 
     if isinstance(annot, ForwardRef):
-        return check_type(attr, eval(annot.__forward_arg__))
+        annot = ForwardRef._evaluate(
+            annot, globalns=globals(), localns=locals(), recursive_guard=frozenset()
+        )
+        return check_type(attr, annot)
 
     return isinstance(attr, annot)
 
@@ -85,5 +86,8 @@ def type_to_view_string(annot: Annotation):
         if origin is Literal:
             return " | ".join(a for a in args)
     if isinstance(annot, ForwardRef):
-        return type_to_view_string(eval(annot.__forward_arg__))
+        annot = ForwardRef._evaluate(
+            annot, globalns=globals(), localns=locals(), recursive_guard=frozenset()
+        )
+        return type_to_view_string(annot)
     return annot.__name__
