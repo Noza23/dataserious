@@ -1,5 +1,5 @@
 # DataSerious
-
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 ![Tests](https://github.com/Noza23/dataserious/actions/workflows/tests.yaml/badge.svg)
 [![codecov](https://codecov.io/gh/Noza23/dataserious/graph/badge.svg?token=m9yHQyL0sQ)](https://codecov.io/gh/Noza23/dataserious)
 
