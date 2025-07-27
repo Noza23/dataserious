@@ -7,7 +7,7 @@ import inspect
 import itertools
 import json
 import operator
-import random
+import secrets
 import sys
 from dataclasses import MISSING
 from functools import reduce
@@ -66,7 +66,7 @@ class BaseConfig:
     Example::
 
      class SomeConfig(BaseConfig):
-        z: list[int] = field(metadata={'description': 'list of integers'})
+         z: list[int] = field(metadata={"description": "list of integers"})
 
     """
 
@@ -100,9 +100,10 @@ class BaseConfig:
          class SomeConfig(BaseConfig):
              x: int
 
+
          def __post_init__(self):
-            super().__post_init__()
-            assert x < 2 # Additional check
+             super().__post_init__()
+             assert x < 2  # Additional check
         """
         for field in self.fields():
             self._modify_field(
@@ -111,11 +112,11 @@ class BaseConfig:
 
             if not check_type(getattr(self, field.name), field.type):
                 raise TypeError(
-                    '\n'
-                    f'| loc: {self.__class__.__name__}.{field.name}\n'
-                    f'| expects: {type_to_view_string(field.type)}\n'
-                    f'| got: {type(getattr(self, field.name))}\n'
-                    f'| description: {field.metadata.get("description")}\n'
+                    "\n"
+                    f"| loc: {self.__class__.__name__}.{field.name}\n"
+                    f"| expects: {type_to_view_string(field.type)}\n"
+                    f"| got: {type(getattr(self, field.name))}\n"
+                    f"| description: {field.metadata.get('description')}\n"
                 )
 
     def __contains__(self, item):
@@ -174,12 +175,14 @@ class BaseConfig:
          class SomeOtherConfig(BaseConfig):
              z: int
 
+
          class SomeConfig(BaseConfig):
              x: SomeOtherConfig
              y: int
 
+
          c = SomeConfig(SomeOtherConfig(z=1), 2)
-         assert c.get_by_path('x.z') == 1
+         assert c.get_by_path("x.z") == 1
 
         """
         if isinstance(path, str):
@@ -201,8 +204,9 @@ class BaseConfig:
         Example::
 
          class SomeConfig(BaseConfig):
-            x: int
-            y: int
+             x: int
+             y: int
+
 
          c = SomeConfig(1, 2)
          c_new = c.replace(x=3)
@@ -302,7 +306,7 @@ class BaseConfig:
             load all of them.
 
         """
-        patt = f'*[{"|".join(YAML_SUFFIXES + JSON_SUFFIXES)}]'
+        patt = f"*[{'|'.join(YAML_SUFFIXES + JSON_SUFFIXES)}]"
         return [cls.from_file(p) for p in Path(path).glob(patt)]
 
     @classmethod
@@ -491,12 +495,13 @@ def _yield_config_search_space(
     mapping = _get_grid_mapping(search_tree)
     product = itertools.product(*mapping.values())
     if random_n:  # Random Search might get slow for large search spaces.
-        assert seed is not None, "Seed must be provided for Random Search."
+        if seed is None:
+            raise ValueError("Seed must be provided for Random Search.")
         product_list = list(product)
-        random.Random(seed).shuffle(product_list)
+        secrets.SystemRandom(seed).shuffle(product_list)
         product = product_list[:random_n]  # type: ignore[assignment]
     for values in product:
-        for k, values_ in zip(mapping.keys(), values):
+        for k, values_ in zip(mapping.keys(), values, strict=True):
             set_config_value_by_path(config_tree, k, values_)
         yield config_tree
 
@@ -628,7 +633,10 @@ def parse(attr, annot: Annotation):
             }
 
     if isinstance(annot, ForwardRef):
-        return parse(attr, eval(annot.__forward_arg__))
+        annot = ForwardRef._evaluate(
+            annot, globalns=globals(), localns=locals(), recursive_guard=frozenset()
+        )
+        return parse(attr, annot)
     return attr
 
 
